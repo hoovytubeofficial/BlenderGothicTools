@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+_Logs/
+_Cache/
+_Essemble/
+_Samples/
+*.blend1
