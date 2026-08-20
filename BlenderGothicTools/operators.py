@@ -962,6 +962,200 @@ a character first and then point this at it"""
             )
 
 
+def _mds_script(filepath: str):
+    """The parsed model script for the file browser's current selection, cached."""
+    from . import mds
+
+    return mds.load(filepath) if filepath.lower().endswith(".mds") else None
+
+
+def _mds_matches(script, pattern: str):
+    """Animations whose name contains every space-separated term (case-insensitive)."""
+    from . import mds
+
+    if not script:
+        return []
+    terms = [term for term in pattern.upper().split() if term]
+    out = []
+    for animation in script["animations"]:
+        if animation["kind"] not in ("ani", "anialias"):
+            continue            # a blend or combination names no clip of its own
+        name = animation["name"].upper()
+        if all(term in name for term in terms):
+            out.append(animation)
+    return out
+
+
+class KrxMdsImpGUI(_ImportScaleMixin):
+    """Import animations from a model script (.mds).
+
+A .MAN file is a nameless block of samples; the model script is where the motion is
+described. It names every animation a creature has, says which follows which, and records
+what happens during them - footsteps, effects, and the frames at which a weapon leaves the
+belt and lands in the hand.
+
+Pick a script, type a word to narrow the list (RUN, DANCE, 1H), and the matching clips are
+imported onto your rig end to end, each with a timeline marker"""
+
+    krx_title = "Model Script"
+
+    target_armature: EnumProperty(
+        name="Armature",
+        description="Armature that receives the animations. By default the one you have "
+                    "selected; with nothing selected a skeleton is built from the .MDH",
+        items=_armature_items,
+    )
+
+    remembered_armature: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    name_filter: StringProperty(
+        name="Filter",
+        description="Only import animations whose name contains these words. RUN, DANCE, "
+                    "1H, T_ - several words all have to match. Leave empty for everything "
+                    "the script defines, which for humans is several hundred",
+        default="",
+    )
+
+    limit: IntProperty(
+        name="Limit",
+        description="Stop after this many animations. HumanS.mds defines 784 of them, so "
+                    "a careless empty filter is a long wait",
+        default=12, min=1, soft_max=200,
+    )
+
+    frame_gap: IntProperty(
+        name="Gap Between Clips",
+        description="Blank frames left between one animation and the next on the timeline",
+        default=10, min=0, soft_max=120,
+    )
+
+    import_events: BoolProperty(
+        name="Event Markers",
+        description="Add a timeline marker for every event the script records - footstep "
+                    "sounds, particle effects, and DEF_INSERT_ITEM / DEF_REMOVE_ITEM, "
+                    "which is where a weapon changes hands. Frames are taken from the "
+                    "clip's own numbering",
+        default=True,
+    )
+
+    def krx_on_invoke(self, context):
+        current = selected_armature(context)
+        self.remembered_armature = current.name if current else ""
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        header = layout.box()
+        header.label(text=self.krx_title, icon="IMPORT")
+
+        script = _mds_script(self.filepath)
+        if script is None:
+            header.label(text="Select a model script (.mds)", icon="INFO")
+            return
+
+        info = header.column(align=True)
+        info.scale_y = 0.85
+        info.label(text=f"model: {script['model']}  ->  {script['prefix']}-*.MAN")
+        info.label(text=f"skeleton: {script['skeleton']}")
+        info.label(text=f"{len(script['animations'])} animations defined")
+
+        col = layout.column()
+        col.prop(self, "target_armature")
+        col.prop(self, "name_filter")
+        col.prop(self, "limit")
+        col.prop(self, "frame_gap")
+        col.prop(self, "import_events")
+        col.prop(self, "scale")
+
+        matches = _mds_matches(script, self.name_filter)
+        preview = layout.box()
+        preview.label(text=f"{len(matches)} match, importing {min(len(matches), self.limit)}",
+                      icon="ANIM")
+        listing = preview.column(align=True)
+        listing.scale_y = 0.8
+        listing.enabled = False
+        from . import mds
+
+        for animation in matches[:self.limit][:14]:
+            events = mds.event_summary(animation)
+            reverse = " (reversed)" if animation["direction"] == "R" else ""
+            listing.label(text=f"{animation['name']}{reverse}"
+                               + (f"   [{events}]" if events else ""))
+        if len(matches) > 14:
+            listing.label(text=f"... and {min(len(matches), self.limit) - 14} more")
+
+    def krx_run(self, context):
+        from . import mds
+        from .KrxManImp import import_man
+
+        script = _mds_script(self.filepath)
+        if script is None:
+            raise RuntimeError("Not a model script (.mds)")
+
+        armature_obj = None
+        if self.target_armature == AUTO_ARMATURE:
+            armature_obj = bpy.data.objects.get(self.remembered_armature) if self.remembered_armature else None
+            if armature_obj is None:
+                armature_obj = selected_armature(context)
+        elif self.target_armature not in (NEW_ARMATURE, NO_TARGETS):
+            armature_obj = bpy.data.objects.get(self.target_armature)
+
+        matches = _mds_matches(script, self.name_filter)[:self.limit]
+        if not matches:
+            raise RuntimeError(f"No animation in {os.path.basename(self.filepath)} matches "
+                               f"'{self.name_filter}'")
+
+        scene = context.scene
+        action = None
+        frame = 1
+        imported = 0
+        missing = []
+
+        for animation in matches:
+            path = mds.animation_file(script, animation)
+            if not path:
+                missing.append(animation["name"])
+                continue
+
+            result = import_man(
+                path,
+                armature_obj,
+                scale=self.scale,
+                frame_start=frame,
+                set_scene_range=True,
+                action_name=f"{script['prefix']} {animation['name']}",
+                reuse_action=action,
+                add_marker=True,
+            )
+            action = result["action"]
+            armature_obj = result["armature"]
+
+            if self.import_events and animation["events"]:
+                # event frames are numbered in the SOURCE file, and a sliced animation
+                # starts partway into it, so the clip's first frame is the origin
+                origin = animation["first"] or 0
+                for event in animation["events"]:
+                    offset = max(0, event["frame"] - origin)
+                    at = frame + offset
+                    if at > result["frame_end"]:
+                        continue
+                    label = event["type"].replace("event", "")
+                    if event["args"]:
+                        label += ":" + " ".join(event["args"][:2])
+                    if not any(m.frame == at and m.name == label for m in scene.timeline_markers):
+                        scene.timeline_markers.new(label, frame=at)
+
+            frame = result["frame_end"] + max(1, self.frame_gap)
+            imported += 1
+
+        print(f"model script {os.path.basename(self.filepath)}: imported {imported} "
+              f"animation(s) onto '{armature_obj.name if armature_obj else '?'}'")
+        if missing:
+            print(f"no compiled clip for: {', '.join(missing[:8])}", level="WARN")
+
+
 class KrxMmbImpGUI(_StaticMeshImportMixin):
     """Import a compiled MorphMesh binary (.mmb).
 Morph-animated mesh: heads with facial animation, bows that bend, flags that wave.

@@ -17,6 +17,7 @@ from .operators import (
     KrxAscExpGUI,
     KrxManImpGUI,
     KrxMdlImpGUI,
+    KrxMdsImpGUI,
     KrxMdmImpGUI,
     KrxMmbImpGUI,
     KrxMrmImpGUI,
@@ -29,7 +30,7 @@ bl_info = {
     "name": "Blender Gothic Tools",
     "description": "Gothic 1 / Gothic 2a import-export, based on KrxImpExp",
     "author": "Kerrax, Patrix, Shoun, HRY, HoovyTube",
-    "version": (3, 17, 2),
+    "version": (3, 18, 0),
     "blender": (4, 2, 0),
     "location": "File > Import-Export",
     "doc_url": "https://github.com/hoovytubeofficial/BlenderGothicTools",
@@ -61,6 +62,7 @@ def register():
     KrxImportExportManager.register(KrxMdmImpGUI, "MDM", "Kerrax Model Mesh")
     KrxImportExportManager.register(KrxMdlImpGUI, "MDL", "Kerrax Model")
     KrxImportExportManager.register(KrxManImpGUI, "MAN", "Kerrax Compiled Animation")
+    KrxImportExportManager.register(KrxMdsImpGUI, "MDS", "Gothic Model Script")
 
     KrxImportExportManager.register(Krx3dsExpGUI, "3DS", "Kerrax 3D Studio Mesh")
     KrxImportExportManager.register(KrxAscExpGUI, "ASC", "Kerrax ASCII Model")

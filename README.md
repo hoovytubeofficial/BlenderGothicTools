@@ -18,12 +18,14 @@ Point it at your Gothic II install once, then pick an NPC script out of the game
 | `.MAN` / `.MDH` | compiled animations and skeletons |
 | `.MMB` | morph meshes - heads import with expressions and lip-sync visemes as shape keys |
 | `.MRM` / `.MSH` / `.ZEN` | compiled item meshes, world meshes, worlds (plus ASCII vob-tree prefabs: props, lights, effects) |
+| `.MDS` | model scripts - every animation's name, what follows it, and what happens during it |
 | `.3DS` / `.ASC` | the classic modkit source formats, import **and export** |
 | `.TEX` | converted to DDS on the fly, mipmaps included |
 
 ## Highlights
 
 - **Essemble** - a character builder in the N-panel. Fill in body/head/weapons by hand or load everything from a `.D` script; recipes can be saved and shared as small JSON files.
+- **Animations by name, not by filename** - point at a model script, type `RUN` or `DANCE`, and the matching clips import onto your rig end to end. Event tags become timeline markers: footsteps, effects, and the frames where a weapon changes hands.
 - **Animation import with retiming** - Gothic clips carry one sample per frame at their own rate (dances at 15 fps, combat at 25). Import them 1:1, or retime to your scene's frame rate with proper eased in-betweens.
 - **Rig transposer** - play any animation on any skeleton that shares bone names. Yes, a human dance on a dragon. It measures each joint's turn from rest in world space, so the target stays on its feet.
 - **Source/SFM unit preset** for people porting characters to Source Filmmaker.

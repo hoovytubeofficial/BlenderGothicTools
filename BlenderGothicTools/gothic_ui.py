@@ -23,6 +23,12 @@ from .scene import SceneMode
 # -------------------------------------------------------------------------------------------------------
 
 FORMAT_LORE = {
+    "mds": (
+        "Model script (.mds).\n"
+        "The text that gives a creature's animations their meaning: every clip's NAME, what follows it,\n"
+        "which slice of which source file it is, whether it plays in reverse, and what happens during it -\n"
+        "footsteps, effects, and the frames where a weapon leaves the belt and lands in the hand"
+    ),
     "mdl": (
         "Compiled model (.mdl).\n"
         "A skeleton and its skinned body in ONE file: a .mdh hierarchy section with a whole .mdm after it.\n"
@@ -105,7 +111,6 @@ FORMAT_LORE = {
 }
 
 PLANNED_FORMATS = (
-    ("mds", "Model Script (.mds)"),
     ("msb", "Compiled Model Script (.msb)"),
 )
 
@@ -149,7 +154,7 @@ def collection_scope(name: str):
             pass
 
 
-_PLANNED_EXTENSIONS = {".man", ".mds", ".msb"}
+_PLANNED_EXTENSIONS = {".man", ".msb"}
 """Formats the assembler will hit but cannot load yet"""
 
 
@@ -1655,6 +1660,7 @@ class KRX_PT_gothic(bpy.types.Panel):
             col.operator("import_scene.krxmdmimpgui", text="Model Mesh (.mdm)", icon_value=icons.icon_id("mrm"))
             col.operator("import_scene.krxmdlimpgui", text="Model (.mdl)", icon_value=icons.icon_id("mrm"))
             col.operator("import_scene.krxmanimpgui", text="Animation (.man)", icon_value=icons.icon_id("man"))
+            col.operator("import_scene.krxmdsimpgui", text="Model Script (.mds)", icon_value=icons.icon_id("mds_or_msb"))
             col.operator("krx.tex_preview", text="Texture to Sphere (.tex)", icon_value=icons.icon_id("tex"))
 
             layout.separator()
@@ -1735,7 +1741,8 @@ class KRX_PT_gothic(bpy.types.Panel):
             col.label(text="Done: MRM MSH ZEN 3DS ASC MMB")
             col.label(text="Done: MDM/MDL, MAN/MDH, TEX->DDS")
             col.label(text="Done: .D scripts (human + monster)")
-            col.label(text="Next: MDS scripts, VDF, GOTHIC.DAT")
+            col.label(text="Done: MDS scripts (names + events)")
+            col.label(text="Next: VDF archives, GOTHIC.DAT")
 
 
 _CLASSES = (

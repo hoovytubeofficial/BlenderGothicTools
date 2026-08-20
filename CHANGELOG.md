@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.18.0
+- **.MDS model script import.** A .MAN file is a nameless block of samples; the model
+  script is where a creature's motion is described. Pick a script, type a word to narrow
+  the list (RUN, DANCE, 1H), and the matching clips import onto your rig end to end with
+  a timeline marker each - instead of guessing which of 3,977 compiled files you wanted.
+- Event tags come in as markers: footsteps per ground type, particle effects, and
+  DEF_INSERT_ITEM / DEF_REMOVE_ITEM, which is the only record in the game of the frame at
+  which a weapon leaves the belt and lands in the hand. Frames are converted out of the
+  source file's numbering into the clip's own.
+- Scripts also carry what the compiled files cannot: an animation's real name, what
+  follows it, which slice of which source it is, and whether it plays in reverse
+  (160 of them do).
+
 ## 3.17.2
 - Soft-skin meshes are now built from their weight table instead of the vertex array
   stored alongside it. The two disagree in 94 of the 119 retail bodies that can be
