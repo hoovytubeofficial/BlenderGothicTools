@@ -236,6 +236,28 @@ class MeshData:
     def face_materials(self) -> List[Optional[bpy.types.Material]]:
         return self._face_materials
 
+    def _drop_degenerate_faces(self) -> int:
+        """Remove faces that repeat a vertex or point outside the vertex list.
+
+        faces, tvfaces and face_materials are parallel arrays, so an entry has to be
+        dropped from all three or every face after it gets the wrong material."""
+        vertex_count = len(self.verts)
+        keep = [
+            index for index, face in enumerate(self._faces)
+            if len(set(face)) == len(face) and all(0 <= i < vertex_count for i in face)
+        ]
+        if len(keep) == len(self._faces):
+            return 0
+
+        dropped = len(self._faces) - len(keep)
+        self._faces = [self._faces[i] for i in keep]
+        if len(self._face_materials) >= len(keep):
+            self._face_materials = [self._face_materials[i] for i in keep
+                                    if i < len(self._face_materials)]
+        if self.tvfaces and len(self.tvfaces) >= len(keep):
+            self.tvfaces = [self.tvfaces[i] for i in keep if i < len(self.tvfaces)]
+        return dropped
+
     def update(self, remove_sectored_materials=False):
         """Update mesh after it has been changed"""
 
@@ -248,6 +270,16 @@ class MeshData:
         if len(self._mesh.vertices) != 0 or len(self._mesh.polygons) != 0:
             return
 
+
+        # A face that names the same vertex twice is not a triangle, and from_pydata
+        # builds a corrupt mesh out of it rather than refusing: the first thing to touch
+        # that mesh afterwards dereferences a null loop and takes Blender down with it.
+        # They have to go BEFORE the mesh is built - deleting them from the bmesh later,
+        # which is what used to happen, is already too late. The two biggest Gothic 2
+        # worlds carry them (AddonWorld 66, NewWorld 868) and both crashed on import.
+        dropped = self._drop_degenerate_faces()
+        if dropped:
+            report(f"{obj_mesh_id}: dropped {dropped} degenerate face(s) before building")
 
         report(f"{obj_mesh_id}: Generating from pydata {len(self.verts)} verts, {len(self._faces)} faces...")
         self._mesh.from_pydata(vertices=self.verts, edges=[], faces=self._faces)

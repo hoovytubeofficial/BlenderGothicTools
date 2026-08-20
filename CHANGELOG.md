@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.18.1
+- **The two biggest worlds no longer crash Blender.** NewWorld.zen and AddonWorld.zen took
+  the whole process down with an access violation inside bmesh. The cause was degenerate
+  faces - triangles that name the same vertex twice - being handed to from_pydata, which
+  builds a corrupt mesh out of them rather than refusing; the next thing to touch that
+  mesh dereferences a null loop. They were being deleted afterwards, which is too late.
+  They are now dropped before the mesh is built, along with their material and UV entries.
+  NewWorld carries 868 of them and AddonWorld 66; the two worlds that always worked have
+  none, which is why this only ever showed up on the big ones.
+- Swept the whole retail corpus: 8 .zen, 1351 .mrm, 760 .d, 173 .mdm, 143 .mdl, 61 .mmb,
+  50 .asc, 40 .mds and 23 .msh all import without a failure.
+
 ## 3.18.0
 - **.MDS model script import.** A .MAN file is a nameless block of samples; the model
   script is where a creature's motion is described. Pick a script, type a word to narrow
