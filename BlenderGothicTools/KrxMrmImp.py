@@ -1,6 +1,8 @@
 from .log import klog as print  # route console output through the add-on's log tag
 import struct
 
+from mathutils import Matrix
+
 from .file import TFile
 from .helpers import TZENArchive
 from .material import link_texture_to_material, new_material
@@ -383,7 +385,12 @@ class TMRMFileLoader:
         The node index is a DIRECT, ZERO-BASED index into the .MDH node list - verified
         on HUM_BODY_NAKED0, whose highest vertex weights to BIP01 HEAD and lowest to
         BIP01 R FOOT, and on ORC_BODYWARRIOR, whose shoulder pads weight to the
-        clavicles. One-based reads put the pads on ZS_RIGHTHAND."""
+        clavicles. One-based reads put the pads on ZS_RIGHTHAND.
+
+        The per-weight POSITION is kept, not skipped: it is where the vertex sits in that
+        bone's own space, and summing those over a vertex's weights is what actually
+        produces the bind pose (see KrxManImp.skin_softskin_meshes). The engine skins from
+        exactly these numbers."""
         buffer_size = self.__file.ReadUnsignedLong()
         buffer_end = self.__file.GetPos() + buffer_size
 
@@ -393,8 +400,8 @@ class TMRMFileLoader:
             entries = []
             for _ in range(count):
                 weight = self.__file.ReadData("f", 4)[0]
-                self.__file.SkipByOffset(12)          # position relative to the node
-                entries.append((weight, self.__file.ReadUnsignedChar()))
+                position = self.__file.ReadData("3f", 12)   # relative to the node
+                entries.append((weight, position, self.__file.ReadUnsignedChar()))
             per_vertex.append(entries)
 
         self.__file.SetPos(buffer_end)
@@ -431,9 +438,11 @@ class TMRMFileLoader:
         the .MDH hierarchy chunk ends with, so a body mesh finds its own skeleton with no
         naming convention involved - it matches for every retail .mdm.
 
-        The zCProgMeshProto positions are the real bind pose in model space (a wolf body
-        measures 113 cm, an orc 208), so the mesh imports without a skeleton at all; the
-        skeleton only supplies the vertex-group names.
+        The zCProgMeshProto positions are only a rough stand-in for a soft-skin mesh: 94
+        of the 119 retail bodies that can be checked disagree with their own weight table,
+        the dragons by 85 cm. They are close enough to build the mesh from and to match
+        vertices back by position, and skin_softskin_meshes() then moves every vertex to
+        where the weights actually put it.
 
         The same reader takes a .mdl, which is a skeleton section (0xD100 hierarchy,
         0xD110 its source path, 0xD120 end) with exactly this file glued on after it - the
@@ -708,31 +717,35 @@ def KrxMdmImp(
     built from it (or `armature_obj` is reused), every vertex gets its groups from the
     soft-skin table, and an Armature modifier is added.
 
-    `yaw_180` turns the mesh to face the way an .ASC-imported model does - see
-    KrxManImp.GOTHIC_YAW. A compiled .mdm is in the skeleton's own space, so without it
-    a monster body would face the opposite way from every ASC armor in the scene."""
-    result = TMRMFileLoader().ReadMDMFile(
-        filename, scale, remove_sectored_materials, color_adjustment=color_adjustment,
-        allow_empty=allow_empty,
-    )
-    if yaw_180:
-        from .KrxManImp import GOTHIC_YAW
+    `yaw_180` turns the model to face the way an .ASC-imported one does - see
+    KrxManImp.GOTHIC_YAW. A compiled .mdm is in the skeleton's own space, so without it a
+    monster body would face the opposite way from every ASC armor in the scene. The turn
+    lives in the rest matrices, so it reaches the mesh through them: every vertex that can
+    be positioned from the skeleton already comes out turned, and only what is left over -
+    a model with no skeleton to be found - needs it applied by hand."""
+    from . import KrxManImp as skeleton_module
 
-        # Soft-skin meshes are in MODEL space and just need turning. Attached meshes are
-        # in their BONE's space and are placed by skin_softskin_meshes() with that bone's
-        # rest matrix, which already contains the turn - turning them here as well would
-        # apply it twice.
-        attached = {obj for obj, _bone in result.get("attachments") or ()}
-        for obj in result["objects"]:
-            if obj not in attached:
-                obj.data.transform(GOTHIC_YAW)
-    if skin:
-        from .KrxManImp import skin_softskin_meshes
+    previous_yaw = skeleton_module.GOTHIC_YAW
+    if not yaw_180:
+        skeleton_module.GOTHIC_YAW = Matrix.Identity(4)
+    try:
+        result = TMRMFileLoader().ReadMDMFile(
+            filename, scale, remove_sectored_materials, color_adjustment=color_adjustment,
+            allow_empty=allow_empty,
+        )
+        if skin:
+            result.update(skeleton_module.skin_softskin_meshes(
+                result, scale=scale, armature_obj=armature_obj,
+                hierarchy_path=hierarchy_path, mesh_path=filename, skeleton=skeleton,
+            ))
 
-        result.update(skin_softskin_meshes(
-            result, scale=scale, armature_obj=armature_obj, hierarchy_path=hierarchy_path,
-            mesh_path=filename, skeleton=skeleton,
-        ))
+        if yaw_180:
+            positioned = result.get("positioned") or set()
+            for obj in result["objects"]:
+                if obj not in positioned:
+                    obj.data.transform(previous_yaw)
+    finally:
+        skeleton_module.GOTHIC_YAW = previous_yaw
     return result
 
 

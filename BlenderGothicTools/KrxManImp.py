@@ -493,7 +493,8 @@ def skin_softskin_meshes(result: dict, scale: float = 0.01, armature_obj=None,
         else:
             print("no skeleton found for this model mesh - imported unrigged "
                   "(the bind pose is still correct)", level="WARN")
-        return {"armature": armature_obj, "hierarchy": None, "skinned": 0, "placed": 0}
+        return {"armature": armature_obj, "hierarchy": None, "skinned": 0, "placed": 0,
+                "positioned": set()}
 
     nodes = read_mdh(hierarchy_path)
     print(f"skeleton {Path(hierarchy_path).name}: {len(nodes)} nodes")
@@ -512,8 +513,11 @@ def skin_softskin_meshes(result: dict, scale: float = 0.01, armature_obj=None,
     # origin, because Gothic bones run along local X - so the .MDH rest pose of the bone
     # named in the .mdm's 0xD020 chunk IS the placement. Without it every loose part
     # piles up flat at (0, 0, 0).
-    rest_world = hierarchy_rest_matrices(nodes, scale) if attachment_bone else {}
+    rest_world = hierarchy_rest_matrices(nodes, scale)
+    positioned = set()
     placed = 0
+    rebuilt = 0
+    worst_move = 0.0
 
     skinned = 0
     missing = set()
@@ -527,6 +531,7 @@ def skin_softskin_meshes(result: dict, scale: float = 0.01, armature_obj=None,
             node_index = node_by_name.get(bone.upper())
             if node_index is not None and node_index in rest_world:
                 obj.data.transform(rest_world[node_index])
+                positioned.add(obj)
                 placed += 1
             else:
                 print(f"'{obj.name}' hangs on '{bone}', which is not in the skeleton - "
@@ -540,8 +545,41 @@ def skin_softskin_meshes(result: dict, scale: float = 0.01, armature_obj=None,
                 group.add(range(len(obj.data.vertices)), 1.0, "REPLACE")
                 groups[name] = group
 
+        # Where the vertices really belong. A soft-skin vertex is defined as the weighted
+        # sum of its position in each of its bones' spaces - that IS the bind pose, and it
+        # is what the engine skins from. The zCProgMeshProto array the mesh was built from
+        # is only an approximation of it: 94 of the 119 retail bodies disagree with their
+        # own weights, HUM_BODY_BABE0 by 15 cm and the dragons by 85, which is what put a
+        # character next to its armature instead of inside it.
+        moved = {}
         for vertex_indices, entries in weights.get(obj, []):
-            for weight, node_index in entries:
+            position = Vector((0.0, 0.0, 0.0))
+            total = 0.0
+            for weight, local, node_index in entries:
+                matrix = rest_world.get(node_index)
+                if matrix is None:
+                    continue
+                # file (x, y, z) -> Blender (x, z, y), the same swap the mesh reader uses
+                point = Vector((local[0], local[2], local[1])) * scale
+                position += (matrix @ point) * weight
+                total += weight
+            if total > 1.0e-6:
+                if abs(total - 1.0) > 1.0e-3:
+                    position /= total          # a few meshes do not quite sum to one
+                for vertex_index in vertex_indices:
+                    moved[vertex_index] = position
+
+        for vertex_index, position in moved.items():
+            vertex = obj.data.vertices[vertex_index]
+            worst_move = max(worst_move, (vertex.co - position).length)
+            vertex.co = position
+        if moved:
+            obj.data.update()
+            positioned.add(obj)
+            rebuilt += 1
+
+        for vertex_indices, entries in weights.get(obj, []):
+            for weight, _local, node_index in entries:
                 if not (0 <= node_index < len(nodes)):
                     continue
                 bone_name = bones_by_name.get(nodes[node_index]["name"].upper())
@@ -566,6 +604,9 @@ def skin_softskin_meshes(result: dict, scale: float = 0.01, armature_obj=None,
         skinned += 1
         print(f"skinned '{obj.name}' to '{armature_obj.name}': {len(groups)} vertex group(s)")
 
+    if rebuilt:
+        print(f"bind pose of {rebuilt} mesh(es) rebuilt from the skinning table "
+              f"(largest correction {worst_move * 100:.1f} cm)")
     if placed:
         print(f"placed {placed} attached part(s) at their bone's rest transform")
     if missing:
@@ -573,7 +614,7 @@ def skin_softskin_meshes(result: dict, scale: float = 0.01, armature_obj=None,
               f"{', '.join(sorted(missing)[:8])}", level="WARN")
 
     return {"armature": armature_obj, "hierarchy": hierarchy_path, "skinned": skinned,
-            "placed": placed}
+            "placed": placed, "positioned": positioned}
 
 
 def _yaw_only(rotation: Quaternion) -> Quaternion:

@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.17.2
+- Soft-skin meshes are now built from their weight table instead of the vertex array
+  stored alongside it. The two disagree in 94 of the 119 retail bodies that can be
+  checked - HUM_BODY_BABE0 by 15 cm, the dragons by 85, one by over a metre - which is
+  what left a character standing next to its own armature. The weights are what the
+  engine skins from, so they are the real bind pose.
+- The 180 degree turn now reaches the mesh through the rest matrices rather than being
+  applied to the vertices by hand, so it can no longer be applied twice or be skipped
+  when "Turn 180" is off. Only a model whose skeleton cannot be found still needs it
+  applied directly.
+
 ## 3.17.1
 - Rig transposer now measures joint rotations in world space. Bone-frame deltas turned
   targets about the wrong axes when the two skeletons oriented a shared bone differently -

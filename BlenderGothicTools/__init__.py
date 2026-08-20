@@ -29,7 +29,7 @@ bl_info = {
     "name": "Blender Gothic Tools",
     "description": "Gothic 1 / Gothic 2a import-export, based on KrxImpExp",
     "author": "Kerrax, Patrix, Shoun, HRY, HoovyTube",
-    "version": (3, 17, 1),
+    "version": (3, 17, 2),
     "blender": (4, 2, 0),
     "location": "File > Import-Export",
     "doc_url": "https://github.com/hoovytubeofficial/BlenderGothicTools",
